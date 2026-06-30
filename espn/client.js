@@ -3,108 +3,87 @@ const axios = require("axios");
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 
 const LEAGUES = [
-  { key: "nfl",        label: "NFL",              path: "football/nfl" },
-  { key: "nba",        label: "NBA",              path: "basketball/nba" },
-  { key: "mlb",        label: "MLB",              path: "baseball/mlb" },
-  { key: "epl",        label: "Soccer (EPL)",     path: "soccer/eng.1" },
-  { key: "mls",        label: "Soccer (MLS)",     path: "soccer/usa.1" },
-  { key: "ucl",        label: "Soccer (UCL)",     path: "soccer/uefa.champions" },
-  { key: "laliga",     label: "Soccer (La Liga)", path: "soccer/esp.1" },
-  { key: "atp",        label: "Tennis (ATP)",     path: "tennis/atp" },
-  { key: "wta",        label: "Tennis (WTA)",     path: "tennis/wta" },
-  { key: "wimbledon",  label: "Wimbledon",        path: "tennis/wimbledon" },
-  { key: "usopen_ten", label: "US Open Tennis",   path: "tennis/us-open" },
+  { key: "nfl",        label: "NFL",              path: "football/nfl",          sport: "football" },
+  { key: "nba",        label: "NBA",              path: "basketball/nba",         sport: "basketball" },
+  { key: "mlb",        label: "MLB",              path: "baseball/mlb",           sport: "baseball" },
+  { key: "epl",        label: "Soccer (EPL)",     path: "soccer/eng.1",           sport: "soccer" },
+  { key: "mls",        label: "Soccer (MLS)",     path: "soccer/usa.1",           sport: "soccer" },
+  { key: "ucl",        label: "Soccer (UCL)",     path: "soccer/uefa.champions",  sport: "soccer" },
+  { key: "laliga",     label: "Soccer (La Liga)", path: "soccer/esp.1",           sport: "soccer" },
+  { key: "atp",        label: "Tennis (ATP)",     path: "tennis/atp",             sport: "tennis" },
+  { key: "wta",        label: "Tennis (WTA)",     path: "tennis/wta",             sport: "tennis" },
+  { key: "wimbledon",  label: "Wimbledon",        path: "tennis/wimbledon",       sport: "tennis" },
+  { key: "usopen_ten", label: "US Open Tennis",   path: "tennis/us-open",         sport: "tennis" },
 ];
 
-const LIVE_STATUSES = new Set([
-  "STATUS_IN_PROGRESS",
-  "STATUS_HALFTIME",
-  "STATUS_END_PERIOD",
-]);
+const isTennis = key => ["atp", "wta", "wimbledon", "usopen_ten"].includes(key);
 
-function periodLabel(key, period) {
-  if (key === "nfl" || key === "nba") return ["Q1","Q2","Q3","Q4","OT"][period - 1] ?? `P${period}`;
-  if (key === "mlb") return `Inning ${period}`;
-  if (["epl","mls","ucl","laliga"].includes(key)) return period === 1 ? "1st Half" : "2nd Half";
-  return `Set ${period}`;
-}
+// Returns today's scoreboard for a league: all games (scheduled, live, final) plus team records
+async function getContext(leagueKey) {
+  const league = LEAGUES.find(l => l.key === leagueKey);
+  if (!league) return null;
 
-async function getLiveGames(enabledKeys) {
-  const active = LEAGUES.filter(l => enabledKeys.includes(l.key));
-  const games  = [];
+  try {
+    const { data } = await axios.get(`${ESPN_BASE}/${league.path}/scoreboard`, { timeout: 8000 });
+    const events   = data.events ?? [];
 
-  for (const league of active) {
-    try {
-      const { data } = await axios.get(`${ESPN_BASE}/${league.path}/scoreboard`, { timeout: 6000 });
-      const events = data.events ?? [];
-      if (events.length === 0) {
-        console.log(`[ESPN] ${league.label}: no events today`);
-      } else {
-        const statuses = [...new Set(events.map(e => e.status?.type?.name ?? "unknown"))];
-        console.log(`[ESPN] ${league.label}: ${events.length} event(s) — statuses: ${statuses.join(", ")}`);
-      }
-      for (const ev of events) {
-        const statusName = ev.status?.type?.name ?? "";
-        if (!LIVE_STATUSES.has(statusName)) continue;
+    const games = events.map(ev => {
+      const comp        = ev.competitions?.[0];
+      const competitors = comp?.competitors ?? [];
+      const tennis      = isTennis(leagueKey);
 
-        const comp  = ev.competitions?.[0];
-        if (!comp) continue;
+      const p1 = competitors[0];
+      const p2 = competitors[1];
+      const homeC = competitors.find(c => c.homeAway === "home") ?? p1;
+      const awayC = competitors.find(c => c.homeAway === "away") ?? p2;
 
-        const isTennis = ["atp", "wta"].includes(league.key);
-        const competitors = comp.competitors ?? [];
-
-        // Tennis uses athletes (players), not teams with homeAway
-        let home, away;
-        if (isTennis) {
-          home = competitors[0];
-          away = competitors[1];
-        } else {
-          home = competitors.find(c => c.homeAway === "home");
-          away = competitors.find(c => c.homeAway === "away");
+      function teamInfo(c, fallbackIndex) {
+        const raw = competitors[fallbackIndex];
+        if (tennis) {
+          const athlete = c?.athlete ?? raw?.athlete;
+          return {
+            name:   athlete?.displayName ?? athlete?.fullName ?? `Player ${fallbackIndex + 1}`,
+            record: c?.record?.[0]?.summary ?? null,
+            score:  c?.score ?? raw?.score ?? null,
+          };
         }
-        if (!home || !away) continue;
-
-        // Tennis: name comes from athlete, not team
-        const homeName  = isTennis
-          ? (home.athlete?.displayName ?? home.athlete?.shortName ?? home.id ?? "Player 1")
-          : (home.team?.displayName ?? "");
-        const homeAbbr  = isTennis
-          ? (home.athlete?.shortName ?? homeName.split(" ").pop())
-          : (home.team?.abbreviation ?? "");
-        const awayName  = isTennis
-          ? (away.athlete?.displayName ?? away.athlete?.shortName ?? away.id ?? "Player 2")
-          : (away.team?.displayName ?? "");
-        const awayAbbr  = isTennis
-          ? (away.athlete?.shortName ?? awayName.split(" ").pop())
-          : (away.team?.abbreviation ?? "");
-
-        const homeScore = isTennis ? (home.sets?.length ?? parseInt(home.score ?? "0", 10)) : parseInt(home.score ?? "0", 10);
-        const awayScore = isTennis ? (away.sets?.length ?? parseInt(away.score ?? "0", 10)) : parseInt(away.score ?? "0", 10);
-
-        const clock  = ev.status?.displayClock ?? "";
-        const period = ev.status?.period ?? 1;
-
-        games.push({
-          league:    league.key,
-          leagueLabel: league.label,
-          gameId:    ev.id,
-          name:      ev.name,
-          shortName: ev.shortName,
-          status:    statusName,
-          clock,
-          period,
-          periodLabel: periodLabel(league.key, period),
-          home: { name: homeName, abbr: homeAbbr, score: homeScore },
-          away: { name: awayName, abbr: awayAbbr, score: awayScore },
-          summary: `${awayAbbr} ${awayScore} vs ${homeAbbr} ${homeScore} · ${periodLabel(league.key, period)}`,
-        });
+        return {
+          name:   c?.team?.displayName ?? `Team ${fallbackIndex + 1}`,
+          abbr:   c?.team?.abbreviation,
+          record: c?.records?.[0]?.summary ?? c?.record?.[0]?.summary ?? null,
+          score:  c?.score ?? null,
+        };
       }
-    } catch {
-      // league not live or ESPN unavailable — skip silently
-    }
-  }
 
-  return games;
+      const home = teamInfo(homeC, 0);
+      const away = teamInfo(awayC, 1);
+
+      return {
+        name:      ev.name,
+        status:    ev.status?.type?.description ?? ev.status?.type?.name ?? "Unknown",
+        startTime: ev.date,
+        clock:     ev.status?.displayClock ?? null,
+        period:    ev.status?.period ?? null,
+        home,
+        away,
+      };
+    });
+
+    console.log(`[ESPN] ${league.label}: ${games.length} game(s) — ${[...new Set(games.map(g => g.status))].join(", ")}`);
+    return { league: league.label, sport: league.sport, games };
+  } catch (err) {
+    console.log(`[ESPN] ${league.label}: unavailable (${err.message})`);
+    return null;
+  }
 }
 
-module.exports = { getLiveGames, LEAGUES };
+// Fetch context for all enabled league keys concurrently
+async function getContextForLeagues(enabledKeys) {
+  const sportKeys = enabledKeys.filter(k => k !== "crypto");
+  const results   = await Promise.all(sportKeys.map(k => getContext(k)));
+  const context   = {};
+  sportKeys.forEach((k, i) => { if (results[i]) context[k] = results[i]; });
+  return context;
+}
+
+module.exports = { getContextForLeagues, LEAGUES };
