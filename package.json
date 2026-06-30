@@ -1,0 +1,30 @@
+{
+  "name": "kalshi-agents",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "build": "cd client && npm install && npm run build",
+    "dev:client": "cd client && npm run dev",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop kalshi-agents",
+    "pm2:restart": "pm2 restart kalshi-agents",
+    "pm2:logs": "pm2 logs kalshi-agents",
+    "pm2:status": "pm2 status",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
+    "axios": "^1.16.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "googleapis": "^171.4.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

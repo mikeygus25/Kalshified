@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm start *)",
+      "Bash(npm install *)",
+      "Bash(npm remove *)",
+      "WebSearch",
+      "WebFetch(domain:docs.kalshi.com)",
+      "Bash(node *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{redirect_url}\" \"https://api.elections.kalshi.com/trade-api/v2/markets?limit=1\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://api.elections.kalshi.com/v1/markets?limit=1\")",
+      "Bash(curl -s -w \"\\\\n%{http_code}\" \"https://api.elections.kalshi.com/\")",
+      "Skill(claude-api)",
+      "Bash(python3 -m json.tool --indent 2)",
+      "Bash(kill 74391)",
+      "Bash(python3 *)",
+      "Bash(pkill -f \"node index.js\")",
+      "Bash(curl -s http://localhost:3000/status)",
+      "Bash(curl -s http://localhost:3000/run/all)",
+      "Bash(curl *)",
+      "Bash(sudo npm *)"
+    ]
+  }
+}

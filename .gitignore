@@ -1,0 +1,23 @@
+# Secrets — never commit these
+.env
+*.pem
+config.json
+
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Build output
+client/dist/
+
+# Logs
+logs/
+*.log
+trade_log.csv
+
+# Runtime state
+state.json
+scout_memory.json
+
+# OS
+.DS_Store
