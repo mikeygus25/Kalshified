@@ -49,8 +49,10 @@ Return a JSON array — nothing else:
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
+const DEFAULT_STATE = { markets: [], signals: [], positions: [], portfolio: {}, positionAssessments: [], lastUpdated: {}, status: {} };
+
 function readState() {
-  return JSON.parse(fs.readFileSync(STATE_PATH, "utf8"));
+  try { return JSON.parse(fs.readFileSync(STATE_PATH, "utf8")); } catch { return { ...DEFAULT_STATE }; }
 }
 
 function writeState(updates) {
