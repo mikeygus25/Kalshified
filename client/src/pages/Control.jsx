@@ -83,7 +83,7 @@ const SPORT_GROUPS = [
   { label: "NBA",    icon: "🏀", keys: ["nba"] },
   { label: "MLB",    icon: "⚾", keys: ["mlb"] },
   { label: "Soccer", icon: "⚽", keys: ["epl", "mls", "ucl", "laliga"] },
-  { label: "Tennis", icon: "🎾", keys: ["atp", "wta"] },
+  { label: "Tennis", icon: "🎾", keys: ["atp", "wta", "wimbledon", "usopen_ten"] },
   { label: "Crypto", icon: "₿",  keys: ["crypto"] },
 ];
 

@@ -3,15 +3,17 @@ const axios = require("axios");
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 
 const LEAGUES = [
-  { key: "nfl",    label: "NFL",              path: "football/nfl" },
-  { key: "nba",    label: "NBA",              path: "basketball/nba" },
-  { key: "mlb",    label: "MLB",              path: "baseball/mlb" },
-  { key: "epl",    label: "Soccer (EPL)",     path: "soccer/eng.1" },
-  { key: "mls",    label: "Soccer (MLS)",     path: "soccer/usa.1" },
-  { key: "ucl",    label: "Soccer (UCL)",     path: "soccer/uefa.champions" },
-  { key: "laliga", label: "Soccer (La Liga)", path: "soccer/esp.1" },
-  { key: "atp",    label: "Tennis (ATP)",     path: "tennis/atp" },
-  { key: "wta",    label: "Tennis (WTA)",     path: "tennis/wta" },
+  { key: "nfl",        label: "NFL",              path: "football/nfl" },
+  { key: "nba",        label: "NBA",              path: "basketball/nba" },
+  { key: "mlb",        label: "MLB",              path: "baseball/mlb" },
+  { key: "epl",        label: "Soccer (EPL)",     path: "soccer/eng.1" },
+  { key: "mls",        label: "Soccer (MLS)",     path: "soccer/usa.1" },
+  { key: "ucl",        label: "Soccer (UCL)",     path: "soccer/uefa.champions" },
+  { key: "laliga",     label: "Soccer (La Liga)", path: "soccer/esp.1" },
+  { key: "atp",        label: "Tennis (ATP)",     path: "tennis/atp" },
+  { key: "wta",        label: "Tennis (WTA)",     path: "tennis/wta" },
+  { key: "wimbledon",  label: "Wimbledon",        path: "tennis/wimbledon" },
+  { key: "usopen_ten", label: "US Open Tennis",   path: "tennis/us-open" },
 ];
 
 const LIVE_STATUSES = new Set([
@@ -34,7 +36,14 @@ async function getLiveGames(enabledKeys) {
   for (const league of active) {
     try {
       const { data } = await axios.get(`${ESPN_BASE}/${league.path}/scoreboard`, { timeout: 6000 });
-      for (const ev of data.events ?? []) {
+      const events = data.events ?? [];
+      if (events.length === 0) {
+        console.log(`[ESPN] ${league.label}: no events today`);
+      } else {
+        const statuses = [...new Set(events.map(e => e.status?.type?.name ?? "unknown"))];
+        console.log(`[ESPN] ${league.label}: ${events.length} event(s) — statuses: ${statuses.join(", ")}`);
+      }
+      for (const ev of events) {
         const statusName = ev.status?.type?.name ?? "";
         if (!LIVE_STATUSES.has(statusName)) continue;
 

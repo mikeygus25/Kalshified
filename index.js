@@ -42,7 +42,7 @@ const running = { pipeline: false, vault: false, robinhood: false, sports: false
 // Sports state — toggled via API, persists in memory (resets on restart)
 const sportsState = {
   enabled: false,
-  leagues: ["nfl", "nba", "mlb", "epl", "mls", "ucl", "laliga", "atp", "wta"],
+  leagues: ["nfl", "nba", "mlb", "epl", "mls", "ucl", "laliga", "atp", "wta", "wimbledon", "usopen_ten"],
   intervalId: null,
   lastRun: null,
   lastGames: 0,
