@@ -8,14 +8,22 @@ const BASE_PATH = "/trade-api/v2";
 function loadPrivateKey() {
   let pem;
   if (process.env.KALSHI_PRIVATE_KEY_BASE64) {
+    console.log("[Kalshi] Loading key from KALSHI_PRIVATE_KEY_BASE64, length:", process.env.KALSHI_PRIVATE_KEY_BASE64.length);
     pem = Buffer.from(process.env.KALSHI_PRIVATE_KEY_BASE64, "base64").toString("utf8");
   } else {
     const keyPath = process.env.KALSHI_PRIVATE_KEY_PATH;
+    console.log("[Kalshi] Loading key from path:", keyPath);
     if (!keyPath) throw new Error("Set KALSHI_PRIVATE_KEY_BASE64 or KALSHI_PRIVATE_KEY_PATH");
     pem = fs.readFileSync(keyPath, "utf8");
   }
-  // createPrivateKey normalises PKCS#1/PKCS#8 and works with OpenSSL 3 on Linux
-  return crypto.createPrivateKey({ key: pem, format: "pem" });
+  console.log("[Kalshi] PEM first line:", pem.split("\n")[0]);
+  try {
+    return crypto.createPrivateKey({ key: pem, format: "pem" });
+  } catch (err) {
+    console.error("[Kalshi] createPrivateKey failed:", err.message);
+    console.error("[Kalshi] PEM length:", pem.length, "| starts with:", JSON.stringify(pem.slice(0, 40)));
+    throw err;
+  }
 }
 
 function sign(timestamp, method, path) {
