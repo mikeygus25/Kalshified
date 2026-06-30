@@ -6,12 +6,13 @@ const BASE_URL = "https://api.elections.kalshi.com/trade-api/v2";
 const BASE_PATH = "/trade-api/v2";
 
 function loadPrivateKey() {
-  // Prefer inline env var (required for cloud deployments like Railway)
-  if (process.env.KALSHI_PRIVATE_KEY) {
-    return process.env.KALSHI_PRIVATE_KEY.replace(/\\n/g, "\n");
+  // Base64-encoded key (most reliable for cloud env vars)
+  if (process.env.KALSHI_PRIVATE_KEY_BASE64) {
+    return Buffer.from(process.env.KALSHI_PRIVATE_KEY_BASE64, "base64").toString("utf8");
   }
+  // Fallback: file path (local dev)
   const keyPath = process.env.KALSHI_PRIVATE_KEY_PATH;
-  if (!keyPath) throw new Error("Set KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH");
+  if (!keyPath) throw new Error("Set KALSHI_PRIVATE_KEY_BASE64 or KALSHI_PRIVATE_KEY_PATH");
   return fs.readFileSync(keyPath, "utf8");
 }
 
