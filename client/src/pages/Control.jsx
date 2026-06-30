@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getAgentStatus, triggerAgent, openLogStream, getSportsStatus, toggleSports, saveSportsLeagues } from "../lib/api";
+import { getAgentStatus, triggerAgent, openLogStream, getSportsStatus, toggleSports, saveSportsLeagues, getPositions } from "../lib/api";
 
 const AGENTS = [
   { key: "scout",     label: "Scout",     desc: "Market discovery",   icon: "🔭" },
@@ -192,6 +192,63 @@ function SportsCard({ onToggle }) {
   );
 }
 
+function OpenPositions() {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try { const d = await getPositions(); if (!cancelled) setData(d); } catch {}
+    }
+    load();
+    const id = setInterval(load, 15000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  const positions = data?.positions ?? [];
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <span className="text-sm font-medium text-white">Open Positions</span>
+        <span className="text-xs text-gray-500">{positions.length} active</span>
+      </div>
+      {positions.length === 0 ? (
+        <p className="text-gray-600 text-xs p-4">No open positions</p>
+      ) : (
+        <div className="divide-y divide-border">
+          {positions.map(p => {
+            const timeLeft = p.close_time
+              ? (() => {
+                  const ms = new Date(p.close_time) - Date.now();
+                  if (ms < 0) return "expired";
+                  const h = Math.floor(ms / 3600000);
+                  const m = Math.floor((ms % 3600000) / 60000);
+                  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                })()
+              : null;
+            return (
+              <div key={p.ticker} className="flex items-center gap-3 px-4 py-3">
+                <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.side === "yes" ? "bg-emerald-900/40 text-emerald-400" : "bg-red-900/40 text-red-400"}`}>
+                  {p.side.toUpperCase()}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-white truncate">{p.title}</p>
+                  <p className="text-xs text-gray-500">{p.ticker}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs text-white font-mono">{p.qty} × {p.mid_cents != null ? `${p.mid_cents}¢` : "—"}</p>
+                  {timeLeft && <p className="text-xs text-gray-500">{timeLeft} left</p>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Control() {
   const [status, setStatus]   = useState(null);
   const [logs, setLogs]       = useState([]);
@@ -295,6 +352,9 @@ export default function Control() {
         ))}
         <SportsCard onToggle={() => getAgentStatus().then(setStatus)} />
       </div>
+
+      {/* Open Positions */}
+      <OpenPositions />
 
       {/* Live Logs */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">

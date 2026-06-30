@@ -193,6 +193,54 @@ app.post("/api/sports/leagues", authMiddleware, (req, res) => {
   res.json({ leagues: sportsState.leagues });
 });
 
+// ─── Open positions endpoint ─────────────────────────────────────────────────
+
+app.get("/api/positions", authMiddleware, async (req, res) => {
+  try {
+    const [posData, balData] = await Promise.all([
+      kalshi.getPositions(),
+      kalshi.getBalance(),
+    ]);
+    const balance   = balData.balance ?? balData.available_balance ?? 0;
+    const positions = (posData.market_positions ?? []).filter(
+      p => parseFloat(p.position_fp ?? "0") !== 0
+    );
+
+    // Enrich each position with market title and current price
+    const enriched = await Promise.allSettled(
+      positions.map(async p => {
+        const ticker = p.ticker ?? p.market_ticker;
+        try {
+          const market = await kalshi.getMarket(ticker);
+          const side   = parseFloat(p.position_fp) > 0 ? "yes" : "no";
+          const qty    = Math.abs(parseFloat(p.position_fp));
+          const midCents = side === "yes"
+            ? ((market.yes_bid ?? 0) + (market.yes_ask ?? 0)) / 2
+            : ((market.no_bid  ?? 0) + (market.no_ask  ?? 0)) / 2;
+          return {
+            ticker,
+            title:        market.title ?? ticker,
+            side,
+            qty,
+            mid_cents:    Math.round(midCents),
+            close_time:   market.close_time ?? market.expiration_time ?? null,
+            status:       market.status ?? "open",
+          };
+        } catch {
+          return { ticker, title: ticker, side: "yes", qty: Math.abs(parseFloat(p.position_fp ?? 1)), mid_cents: null };
+        }
+      })
+    );
+
+    res.json({
+      balance_cents: balance,
+      positions: enriched.map(r => r.status === "fulfilled" ? r.value : null).filter(Boolean),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Legacy HTTP endpoints (kept for backward compat) ────────────────────────
 
 app.get("/trades", (_req, res) => {

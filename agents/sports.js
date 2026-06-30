@@ -76,11 +76,12 @@ COMMON EDGES TO LOOK FOR:
 Return ONLY a JSON array, nothing else:
 [{
   "ticker": string,
+  "title": string,
   "side": "yes" | "no",
-  "fair_prob": number,
-  "market_prob": number,
-  "entry_price": number,
-  "ev": number,
+  "fair_prob": number,      // decimal 0.0–1.0 (e.g. 0.78 not 78)
+  "market_prob": number,    // decimal 0.0–1.0
+  "entry_price": number,    // decimal 0.0–1.0 — the ask price to pay (e.g. 0.44 not 44)
+  "ev": number,             // decimal (e.g. 0.12)
   "confidence": "high" | "medium" | "low",
   "rationale": string
 }]
@@ -131,11 +132,33 @@ async function run(enabledLeagues) {
       max_tokens: 3000,
       messages:   [{ role: "user", content: `${ANALYSIS_PROMPT}\n\n${JSON.stringify(payload)}` }],
     });
-    const raw = res.content[0].text.trim();
+    const raw    = res.content[0].text.trim();
+    const now    = new Date().toISOString();
     const parsed = JSON.parse(raw);
-    signals = parsed.filter(s =>
-      s.confidence !== "low" && s.ev > 0.03 && Math.abs(s.fair_prob - s.market_prob) > 0.08
-    );
+
+    // Normalise and validate signals so Vault accepts them
+    const titleMap = Object.fromEntries(kalshiMarkets.map(m => [m.ticker, m.title]));
+    signals = parsed
+      .map(s => {
+        // entry_price must be 0–1 fraction — Claude sometimes returns cents (e.g. 44 instead of 0.44)
+        let ep = parseFloat(s.entry_price ?? 0);
+        if (ep > 1) ep = ep / 100;
+        return {
+          ...s,
+          entry_price:   parseFloat(ep.toFixed(4)),
+          fair_prob:     parseFloat((s.fair_prob ?? 0).toFixed(4)),
+          market_prob:   parseFloat((s.market_prob ?? 0).toFixed(4)),
+          ev:            parseFloat((s.ev ?? 0).toFixed(4)),
+          title:         s.title ?? titleMap[s.ticker] ?? s.ticker,
+          generated_at:  now,    // required by Vault's staleness check
+        };
+      })
+      .filter(s =>
+        s.confidence !== "low" &&
+        s.ev > 0.03 &&
+        Math.abs(s.fair_prob - s.market_prob) > 0.08 &&
+        s.entry_price > 0 && s.entry_price < 1  // Vault hard-rejects outside this range
+      );
   } catch (err) {
     console.error("[Sports] Analysis failed:", err.message);
   }

@@ -72,6 +72,12 @@ export function openLogStream(onMessage) {
   return es;
 }
 
+export async function getPositions() {
+  const res = await fetch("/api/positions", { headers: authHeaders() });
+  handleUnauth(res);
+  return res.json();
+}
+
 export async function getSportsStatus() {
   const res = await fetch("/api/sports/status", { headers: authHeaders() });
   handleUnauth(res);
