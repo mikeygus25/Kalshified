@@ -6,23 +6,23 @@ const BASE_URL = "https://api.elections.kalshi.com/trade-api/v2";
 const BASE_PATH = "/trade-api/v2";
 
 function loadPrivateKey() {
-  // Base64-encoded key (most reliable for cloud env vars)
+  let pem;
   if (process.env.KALSHI_PRIVATE_KEY_BASE64) {
-    return Buffer.from(process.env.KALSHI_PRIVATE_KEY_BASE64, "base64").toString("utf8");
+    pem = Buffer.from(process.env.KALSHI_PRIVATE_KEY_BASE64, "base64").toString("utf8");
+  } else {
+    const keyPath = process.env.KALSHI_PRIVATE_KEY_PATH;
+    if (!keyPath) throw new Error("Set KALSHI_PRIVATE_KEY_BASE64 or KALSHI_PRIVATE_KEY_PATH");
+    pem = fs.readFileSync(keyPath, "utf8");
   }
-  // Fallback: file path (local dev)
-  const keyPath = process.env.KALSHI_PRIVATE_KEY_PATH;
-  if (!keyPath) throw new Error("Set KALSHI_PRIVATE_KEY_BASE64 or KALSHI_PRIVATE_KEY_PATH");
-  return fs.readFileSync(keyPath, "utf8");
+  // createPrivateKey normalises PKCS#1/PKCS#8 and works with OpenSSL 3 on Linux
+  return crypto.createPrivateKey({ key: pem, format: "pem" });
 }
 
 function sign(timestamp, method, path) {
-  const message = `${timestamp}${method}${path}`;
-  const s = crypto.createSign("RSA-SHA256");
-  s.update(message);
-  return s.sign({
-    key: loadPrivateKey(),
-    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+  const message = Buffer.from(`${timestamp}${method}${path}`);
+  return crypto.sign("SHA256", message, {
+    key:        loadPrivateKey(),
+    padding:    crypto.constants.RSA_PKCS1_PSS_PADDING,
     saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
   }).toString("base64");
 }
