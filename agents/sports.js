@@ -5,6 +5,7 @@
 const Anthropic = require("@anthropic-ai/sdk");
 const kalshi    = require("../kalshi/client");
 const espn      = require("../espn/client");
+const cryptoClient = require("../crypto/client");
 const fs        = require("fs");
 const path      = require("path");
 
@@ -97,44 +98,144 @@ async function getLiveMarketData(tickers) {
   return results;
 }
 
+const CRYPTO_PROMPT = `You are analyzing Kalshi prediction markets about cryptocurrency prices.
+
+You have live prices for BTC, ETH, SOL, XRP, DOGE, BNB, ADA and a list of open Kalshi markets.
+
+For each crypto market, determine:
+1. Which coin it refers to and what the strike/threshold is
+2. The true probability given current price, time to resolution, and typical volatility:
+   - BTC/ETH: ~3-5% daily vol, ~0.7% hourly
+   - SOL/XRP/others: ~5-8% daily vol
+3. Whether Kalshi's price is meaningfully wrong
+
+Signal criteria (strict):
+- |fair_prob - market_prob| > 0.08  (8%+ mispricing)
+- EV > 0.03
+- High or medium confidence only
+- Skip markets expiring in < 10 minutes (too little edge time)
+
+Example: BTC at $105,200, market asks "above $103,000 by EOD (8 hrs away)" → ~92% probability. If YES is at 75¢, EV = 0.92 - 0.75 = 0.17, strong buy.
+
+Return ONLY a JSON array, nothing else:
+[{
+  "ticker": string,
+  "side": "yes" | "no",
+  "fair_prob": number,
+  "market_prob": number,
+  "entry_price": number,
+  "ev": number,
+  "confidence": "high" | "medium" | "low",
+  "rationale": string
+}]
+
+Return [] if no strong signals.`;
+
+async function fetchCryptoMarkets() {
+  try {
+    const data = await kalshi.getMarkets({ limit: 100, status: "open" });
+    return (data.markets ?? []).filter(m => {
+      const title = (m.title ?? "").toLowerCase();
+      return /\b(bitcoin|btc|ethereum|eth|solana|sol|xrp|ripple|doge|dogecoin|bnb|cardano|ada|crypto|coin)\b/.test(title);
+    });
+  } catch (err) {
+    console.error("[Sports/Crypto] Failed to fetch Kalshi markets:", err.message);
+    return [];
+  }
+}
+
+async function runCrypto() {
+  console.log("[Sports/Crypto] Fetching live crypto prices…");
+  let prices;
+  try {
+    prices = await cryptoClient.getPrices();
+  } catch (err) {
+    console.error("[Sports/Crypto] CoinGecko failed:", err.message);
+    return [];
+  }
+  console.log("[Sports/Crypto] Prices: " + prices.map(p => `${p.symbol}=$${p.price.toLocaleString()}`).join(" | "));
+
+  const cryptoMarkets = await fetchCryptoMarkets();
+  if (cryptoMarkets.length === 0) {
+    console.log("[Sports/Crypto] No crypto markets open on Kalshi");
+    return [];
+  }
+  console.log(`[Sports/Crypto] ${cryptoMarkets.length} crypto markets to analyze`);
+
+  const payload = {
+    live_prices: prices,
+    markets: cryptoMarkets.map(m => ({
+      ticker:        m.ticker,
+      title:         m.title,
+      yes_bid_cents: m.yes_bid  ?? 0,
+      yes_ask_cents: m.yes_ask  ?? 0,
+      no_bid_cents:  m.no_bid   ?? 0,
+      no_ask_cents:  m.no_ask   ?? 0,
+      market_prob:   parseFloat(((( m.yes_bid ?? 0) + (m.yes_ask ?? 0)) / 2 / 100).toFixed(4)),
+      close_time:    m.close_time ?? m.expiration_time ?? null,
+    })),
+  };
+
+  let signals = [];
+  try {
+    const res = await anthropic.messages.create({
+      model:      "claude-sonnet-4-6",
+      max_tokens: 2048,
+      messages:   [{ role: "user", content: `${CRYPTO_PROMPT}\n\n${JSON.stringify(payload)}` }],
+    });
+    const raw = res.content[0].text.trim();
+    signals   = JSON.parse(raw).filter(s =>
+      s.confidence !== "low" && s.ev > 0.03 && Math.abs(s.fair_prob - s.market_prob) > 0.08
+    );
+  } catch (err) {
+    console.error("[Sports/Crypto] Analysis failed:", err.message);
+  }
+
+  console.log(`[Sports/Crypto] ${signals.length} crypto signal(s)`);
+  signals.forEach(s =>
+    console.log(`[Sports/Crypto]  → ${s.ticker} ${s.side.toUpperCase()} | fair=${(s.fair_prob*100).toFixed(1)}% mkt=${(s.market_prob*100).toFixed(1)}% EV=${s.ev.toFixed(3)} | ${s.rationale}`)
+  );
+
+  return signals;
+}
+
 async function run(enabledLeagues) {
   console.log(`[Sports] Scanning live games — leagues: ${enabledLeagues.join(", ")}`);
 
-  // 1. Fetch live ESPN games
-  const liveGames = await espn.getLiveGames(enabledLeagues);
-  if (liveGames.length === 0) {
+  // 1. Fetch live ESPN games (crypto-only mode skips ESPN entirely)
+  const espnLeagues = enabledLeagues.filter(k => k !== "crypto");
+  const liveGames   = espnLeagues.length > 0 ? await espn.getLiveGames(espnLeagues) : [];
+  if (liveGames.length === 0 && !enabledLeagues.includes("crypto")) {
     console.log("[Sports] No live games right now");
     writeState({ sportsGames: [], sportsSignals: [] });
     return { games: 0, signals: [] };
   }
   console.log(`[Sports] ${liveGames.length} live game(s): ${liveGames.map(g => g.summary).join(" | ")}`);
 
-  // 2. Fetch sports-related Kalshi markets
-  const sportsMarkets = await fetchSportsMarkets();
-  if (sportsMarkets.length === 0) {
+  // 2. Fetch sports-related Kalshi markets (only if ESPN leagues are enabled)
+  const sportsMarkets = liveGames.length > 0 ? await fetchSportsMarkets() : [];
+  if (sportsMarkets.length === 0 && liveGames.length > 0) {
     console.log("[Sports] No sports markets open on Kalshi right now");
-    writeState({ sportsGames: liveGames, sportsSignals: [] });
-    return { games: liveGames.length, signals: [] };
   }
   console.log(`[Sports] ${sportsMarkets.length} potential Kalshi sports markets`);
 
-  // 3. Match markets to live games using Claude
-  const matchPayload = {
-    markets: sportsMarkets.map(m => ({ ticker: m.ticker, title: m.title })),
-    games:   liveGames.map(g => ({ gameId: g.gameId, name: g.name, summary: g.summary })),
-  };
-
+  // 3. Match markets to live games using Claude (only when both sides exist)
   let matches = [];
-  try {
-    const matchRes = await anthropic.messages.create({
-      model:      "claude-sonnet-4-6",
-      max_tokens: 1024,
-      messages:   [{ role: "user", content: `${MATCH_PROMPT}\n\n${JSON.stringify(matchPayload)}` }],
-    });
-    matches = JSON.parse(matchRes.content[0].text.trim());
-  } catch (err) {
-    console.error("[Sports] Match step failed:", err.message);
-    return { games: liveGames.length, signals: [] };
+  if (liveGames.length > 0 && sportsMarkets.length > 0) {
+    const matchPayload = {
+      markets: sportsMarkets.map(m => ({ ticker: m.ticker, title: m.title })),
+      games:   liveGames.map(g => ({ gameId: g.gameId, name: g.name, summary: g.summary })),
+    };
+    try {
+      const matchRes = await anthropic.messages.create({
+        model:      "claude-sonnet-4-6",
+        max_tokens: 1024,
+        messages:   [{ role: "user", content: `${MATCH_PROMPT}\n\n${JSON.stringify(matchPayload)}` }],
+      });
+      matches = JSON.parse(matchRes.content[0].text.trim());
+    } catch (err) {
+      console.error("[Sports] Match step failed:", err.message);
+    }
   }
 
   if (matches.length === 0) {
@@ -206,15 +307,23 @@ async function run(enabledLeagues) {
     console.log(`[Sports]  → ${s.ticker} ${s.side.toUpperCase()} | fair=${(s.fair_prob*100).toFixed(1)}% mkt=${(s.market_prob*100).toFixed(1)}% EV=${s.ev.toFixed(3)} | ${s.rationale}`)
   );
 
-  // Merge sports signals into state so Vault can pick them up
-  const state          = readState();
+  // Run crypto analysis if enabled
+  let cryptoSignals = [];
+  if (enabledLeagues.includes("crypto")) {
+    cryptoSignals = await runCrypto();
+  }
+
+  const allNewSignals = [...signals, ...cryptoSignals];
+
+  // Merge into state so Vault can pick them up
+  const state           = readState();
   const existingTickers = new Set((state.signals ?? []).map(s => s.ticker));
-  const newSignals      = signals.filter(s => !existingTickers.has(s.ticker));
-  const mergedSignals   = [...(state.signals ?? []), ...newSignals];
+  const deduped         = allNewSignals.filter(s => !existingTickers.has(s.ticker));
+  const mergedSignals   = [...(state.signals ?? []), ...deduped];
 
-  writeState({ sportsGames: liveGames, sportsSignals: signals, signals: mergedSignals });
+  writeState({ sportsGames: liveGames, sportsSignals: signals, cryptoSignals, signals: mergedSignals });
 
-  return { games: liveGames.length, signals };
+  return { games: liveGames.length, signals: allNewSignals };
 }
 
 module.exports = { run };

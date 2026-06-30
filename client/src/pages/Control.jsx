@@ -84,6 +84,7 @@ const SPORT_GROUPS = [
   { label: "MLB",    icon: "⚾", keys: ["mlb"] },
   { label: "Soccer", icon: "⚽", keys: ["epl", "mls", "ucl", "laliga"] },
   { label: "Tennis", icon: "🎾", keys: ["atp", "wta"] },
+  { label: "Crypto", icon: "₿",  keys: ["crypto"] },
 ];
 
 function SportsCard({ onToggle }) {
