@@ -12,6 +12,7 @@ const scout     = require("./agents/scout");
 const edge      = require("./agents/edge");
 const vault     = require("./agents/vault");
 const robinhood = require("./agents/robinhood");
+const sports    = require("./agents/sports");
 const kalshi    = require("./kalshi/client");
 const tradeLog  = require("./trade_log");
 
@@ -36,7 +37,51 @@ const ROBINHOOD_INTERVAL = parseInt(process.env.ROBINHOOD_INTERVAL || "300000", 
 const app = express();
 app.use(express.json());
 
-const running = { pipeline: false, vault: false, robinhood: false };
+const running = { pipeline: false, vault: false, robinhood: false, sports: false };
+
+// Sports state — toggled via API, persists in memory (resets on restart)
+const sportsState = {
+  enabled: false,
+  leagues: ["nfl", "nba", "mlb", "epl", "mls", "ucl", "laliga", "atp", "wta"],
+  intervalId: null,
+  lastRun: null,
+  lastGames: 0,
+  lastSignals: 0,
+};
+
+async function runSports() {
+  if (running.sports) return;
+  running.sports = true;
+  try {
+    const result = await sports.run(sportsState.leagues);
+    sportsState.lastRun     = new Date().toISOString();
+    sportsState.lastGames   = result.games;
+    sportsState.lastSignals = result.signals.length;
+    // After sports signals are merged, run Vault to act on them
+    if (result.signals.length > 0 && !running.pipeline) {
+      await vault.run();
+    }
+  } catch (err) {
+    console.error("[Main] Sports error:", err.message);
+  } finally {
+    running.sports = false;
+  }
+}
+
+function startSportsLoop() {
+  if (sportsState.intervalId) return;
+  console.log("[Main] Sports scanning started");
+  runSports().catch(console.error);
+  sportsState.intervalId = setInterval(() => runSports().catch(console.error), 30000);
+}
+
+function stopSportsLoop() {
+  if (sportsState.intervalId) {
+    clearInterval(sportsState.intervalId);
+    sportsState.intervalId = null;
+    console.log("[Main] Sports scanning stopped");
+  }
+}
 
 const DEFAULT_STATE = { markets: [], signals: [], positions: [], portfolio: {}, positionAssessments: [], lastUpdated: {}, status: {} };
 
@@ -120,6 +165,33 @@ agentsRoute.init({ running, runPipeline, scout, edge, vault, robinhood });
 app.use("/api/agents", authMiddleware, agentsRoute.router);
 app.use("/api/analytics", authMiddleware, analyticsRoute);
 app.use("/api/config", authMiddleware, configRoute);
+
+// ─── Sports toggle endpoints ─────────────────────────────────────────────────
+
+app.get("/api/sports/status", authMiddleware, (req, res) => {
+  res.json({
+    enabled:     sportsState.enabled,
+    leagues:     sportsState.leagues,
+    running:     running.sports,
+    lastRun:     sportsState.lastRun,
+    lastGames:   sportsState.lastGames,
+    lastSignals: sportsState.lastSignals,
+  });
+});
+
+app.post("/api/sports/toggle", authMiddleware, (req, res) => {
+  sportsState.enabled = !sportsState.enabled;
+  if (sportsState.enabled) startSportsLoop();
+  else stopSportsLoop();
+  console.log(`[Main] Sports scanning ${sportsState.enabled ? "ENABLED" : "DISABLED"}`);
+  res.json({ enabled: sportsState.enabled });
+});
+
+app.post("/api/sports/leagues", authMiddleware, (req, res) => {
+  const { leagues } = req.body;
+  if (Array.isArray(leagues)) sportsState.leagues = leagues;
+  res.json({ leagues: sportsState.leagues });
+});
 
 // ─── Legacy HTTP endpoints (kept for backward compat) ────────────────────────
 

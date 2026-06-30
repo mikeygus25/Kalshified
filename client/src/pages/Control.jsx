@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getAgentStatus, triggerAgent, openLogStream } from "../lib/api";
+import { getAgentStatus, triggerAgent, openLogStream, getSportsStatus, toggleSports } from "../lib/api";
 
 const AGENTS = [
   { key: "scout",     label: "Scout",     desc: "Market discovery",   icon: "🔭" },
@@ -76,6 +76,70 @@ const LOG_COLORS = {
   error: "text-red-400",
   warn:  "text-yellow-400",
 };
+
+function SportsCard({ onToggle }) {
+  const [sports, setSports]     = useState(null);
+  const [toggling, setToggling] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try { const s = await getSportsStatus(); if (!cancelled) setSports(s); } catch {}
+    }
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  async function handleToggle() {
+    setToggling(true);
+    try {
+      const result = await toggleSports();
+      setSports(prev => ({ ...prev, enabled: result.enabled }));
+      if (onToggle) onToggle();
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  const enabled = sports?.enabled ?? false;
+  const lastRun = sports?.lastRun ? new Date(sports.lastRun).toLocaleTimeString() : "—";
+
+  return (
+    <div className={`col-span-1 sm:col-span-2 xl:col-span-4 bg-card border rounded-xl p-5 ${enabled ? "border-emerald-600/40" : "border-border"}`}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">🏆</span>
+          <div>
+            <p className="font-semibold text-white">Live Sports Trading</p>
+            <p className="text-xs text-gray-500">
+              NFL · NBA · MLB · Soccer · Tennis — scans every 30s for mispriced Kalshi odds
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          {sports && (
+            <div className="text-right text-xs text-gray-500">
+              <p>{enabled ? `${sports.lastGames ?? 0} live game(s)` : "Off"}</p>
+              <p>Last scan: {lastRun}</p>
+            </div>
+          )}
+          <button
+            onClick={handleToggle}
+            disabled={toggling}
+            className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${
+              enabled
+                ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+            }`}
+          >
+            {toggling ? "…" : enabled ? "🟢 Scanning ON" : "⚫ Scanning OFF"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Control() {
   const [status, setStatus]   = useState(null);
@@ -178,6 +242,7 @@ export default function Control() {
             onTrigger={handleTrigger}
           />
         ))}
+        <SportsCard onToggle={() => getAgentStatus().then(setStatus)} />
       </div>
 
       {/* Live Logs */}

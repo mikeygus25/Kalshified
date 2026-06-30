@@ -71,3 +71,25 @@ export function openLogStream(onMessage) {
   };
   return es;
 }
+
+export async function getSportsStatus() {
+  const res = await fetch("/api/sports/status", { headers: authHeaders() });
+  handleUnauth(res);
+  return res.json();
+}
+
+export async function toggleSports() {
+  const res = await fetch("/api/sports/toggle", { method: "POST", headers: authHeaders() });
+  handleUnauth(res);
+  return res.json();
+}
+
+export async function saveSportsLeagues(leagues) {
+  const res = await fetch("/api/sports/leagues", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ leagues }),
+  });
+  handleUnauth(res);
+  return res.json();
+}
