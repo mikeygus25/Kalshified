@@ -41,9 +41,36 @@ async function getLiveGames(enabledKeys) {
         const comp  = ev.competitions?.[0];
         if (!comp) continue;
 
-        const home = comp.competitors?.find(c => c.homeAway === "home");
-        const away = comp.competitors?.find(c => c.homeAway === "away");
+        const isTennis = ["atp", "wta"].includes(league.key);
+        const competitors = comp.competitors ?? [];
+
+        // Tennis uses athletes (players), not teams with homeAway
+        let home, away;
+        if (isTennis) {
+          home = competitors[0];
+          away = competitors[1];
+        } else {
+          home = competitors.find(c => c.homeAway === "home");
+          away = competitors.find(c => c.homeAway === "away");
+        }
         if (!home || !away) continue;
+
+        // Tennis: name comes from athlete, not team
+        const homeName  = isTennis
+          ? (home.athlete?.displayName ?? home.athlete?.shortName ?? home.id ?? "Player 1")
+          : (home.team?.displayName ?? "");
+        const homeAbbr  = isTennis
+          ? (home.athlete?.shortName ?? homeName.split(" ").pop())
+          : (home.team?.abbreviation ?? "");
+        const awayName  = isTennis
+          ? (away.athlete?.displayName ?? away.athlete?.shortName ?? away.id ?? "Player 2")
+          : (away.team?.displayName ?? "");
+        const awayAbbr  = isTennis
+          ? (away.athlete?.shortName ?? awayName.split(" ").pop())
+          : (away.team?.abbreviation ?? "");
+
+        const homeScore = isTennis ? (home.sets?.length ?? parseInt(home.score ?? "0", 10)) : parseInt(home.score ?? "0", 10);
+        const awayScore = isTennis ? (away.sets?.length ?? parseInt(away.score ?? "0", 10)) : parseInt(away.score ?? "0", 10);
 
         const clock  = ev.status?.displayClock ?? "";
         const period = ev.status?.period ?? 1;
@@ -58,17 +85,9 @@ async function getLiveGames(enabledKeys) {
           clock,
           period,
           periodLabel: periodLabel(league.key, period),
-          home: {
-            name:  home.team?.displayName ?? "",
-            abbr:  home.team?.abbreviation ?? "",
-            score: parseInt(home.score ?? "0", 10),
-          },
-          away: {
-            name:  away.team?.displayName ?? "",
-            abbr:  away.team?.abbreviation ?? "",
-            score: parseInt(away.score ?? "0", 10),
-          },
-          summary: `${away.team?.abbreviation} ${away.score ?? 0} @ ${home.team?.abbreviation} ${home.score ?? 0} · ${clock} ${periodLabel(league.key, period)}`,
+          home: { name: homeName, abbr: homeAbbr, score: homeScore },
+          away: { name: awayName, abbr: awayAbbr, score: awayScore },
+          summary: `${awayAbbr} ${awayScore} vs ${homeAbbr} ${homeScore} · ${periodLabel(league.key, period)}`,
         });
       }
     } catch {
