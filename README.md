@@ -2,7 +2,7 @@
 
 An autonomous multi-agent trading system for [Kalshi](https://kalshi.com) prediction markets with a real-time web dashboard. Deploy your own copy in minutes.
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template?template=https://github.com/mikeygus25/Kalshified)
+**[→ Deploy on Railway](https://railway.app/new/template?template=https://github.com/mikeygus25/Kalshified)** — or follow Step 3 below if that link doesn't auto-fill.
 
 ---
 
@@ -42,9 +42,13 @@ base64 -i /path/to/your/kalshi_private_key.pem | tr -d '\n'
 
 Copy the output — you'll need it in Step 4.
 
-### Step 3 — Click Deploy
+### Step 3 — Deploy to Railway
 
-Click the **Deploy on Railway** button above. Sign up at [railway.app](https://railway.app) if you don't have an account (free to start).
+1. Sign up at [railway.app](https://railway.app) with your GitHub account (free to start)
+2. Click **"New Project"**
+3. Click **"Deploy from GitHub repo"**
+4. Search for **Kalshified** and select it
+5. Click **Deploy Now**
 
 ### Step 4 — Set your environment variables
 
