@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { getAgentStatus, triggerAgent, openLogStream, getSportsStatus, toggleSports } from "../lib/api";
+import { getAgentStatus, triggerAgent, openLogStream, getSportsStatus, toggleSports, saveSportsLeagues } from "../lib/api";
 
 const AGENTS = [
   { key: "scout",     label: "Scout",     desc: "Market discovery",   icon: "🔭" },
@@ -77,9 +77,19 @@ const LOG_COLORS = {
   warn:  "text-yellow-400",
 };
 
+// Maps user-facing sport labels to internal ESPN league keys
+const SPORT_GROUPS = [
+  { label: "NFL",    icon: "🏈", keys: ["nfl"] },
+  { label: "NBA",    icon: "🏀", keys: ["nba"] },
+  { label: "MLB",    icon: "⚾", keys: ["mlb"] },
+  { label: "Soccer", icon: "⚽", keys: ["epl", "mls", "ucl", "laliga"] },
+  { label: "Tennis", icon: "🎾", keys: ["atp", "wta"] },
+];
+
 function SportsCard({ onToggle }) {
-  const [sports, setSports]     = useState(null);
-  const [toggling, setToggling] = useState(false);
+  const [sports, setSports]         = useState(null);
+  const [toggling, setToggling]     = useState(false);
+  const [savingLeagues, setSaving]  = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +97,7 @@ function SportsCard({ onToggle }) {
       try { const s = await getSportsStatus(); if (!cancelled) setSports(s); } catch {}
     }
     poll();
-    const id = setInterval(poll, 5000);
+    const id = setInterval(poll, 8000);
     return () => { cancelled = true; clearInterval(id); };
   }, []);
 
@@ -102,32 +112,46 @@ function SportsCard({ onToggle }) {
     }
   }
 
-  const enabled = sports?.enabled ?? false;
-  const lastRun = sports?.lastRun ? new Date(sports.lastRun).toLocaleTimeString() : "—";
+  async function handleLeagueToggle(group) {
+    if (!sports) return;
+    const current = sports.leagues ?? [];
+    const allOn   = group.keys.every(k => current.includes(k));
+    const next    = allOn
+      ? current.filter(k => !group.keys.includes(k))   // turn group off
+      : [...new Set([...current, ...group.keys])];       // turn group on
+    setSports(prev => ({ ...prev, leagues: next }));
+    setSaving(true);
+    try { await saveSportsLeagues(next); } finally { setSaving(false); }
+  }
+
+  const enabled  = sports?.enabled ?? false;
+  const leagues  = sports?.leagues ?? [];
+  const lastRun  = sports?.lastRun ? new Date(sports.lastRun).toLocaleTimeString() : "—";
 
   return (
-    <div className={`col-span-1 sm:col-span-2 xl:col-span-4 bg-card border rounded-xl p-5 ${enabled ? "border-emerald-600/40" : "border-border"}`}>
+    <div className={`col-span-1 sm:col-span-2 xl:col-span-4 bg-card border rounded-xl p-5 space-y-4 ${enabled ? "border-emerald-600/40" : "border-border"}`}>
+      {/* Header row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="text-3xl">🏆</span>
           <div>
             <p className="font-semibold text-white">Live Sports Trading</p>
             <p className="text-xs text-gray-500">
-              NFL · NBA · MLB · Soccer · Tennis — scans every 30s for mispriced Kalshi odds
+              Scans ESPN every 60s for mispriced Kalshi odds
             </p>
           </div>
         </div>
         <div className="flex items-center gap-4">
-          {sports && (
+          {sports && enabled && (
             <div className="text-right text-xs text-gray-500">
-              <p>{enabled ? `${sports.lastGames ?? 0} live game(s)` : "Off"}</p>
+              <p>{sports.lastGames ?? 0} live game(s)</p>
               <p>Last scan: {lastRun}</p>
             </div>
           )}
           <button
             onClick={handleToggle}
             disabled={toggling}
-            className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all ${
+            className={`px-6 py-2.5 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
               enabled
                 ? "bg-emerald-600 hover:bg-emerald-500 text-white"
                 : "bg-gray-700 hover:bg-gray-600 text-gray-300"
@@ -135,6 +159,32 @@ function SportsCard({ onToggle }) {
           >
             {toggling ? "…" : enabled ? "🟢 Scanning ON" : "⚫ Scanning OFF"}
           </button>
+        </div>
+      </div>
+
+      {/* Sport pickers */}
+      <div>
+        <p className="text-xs text-gray-500 mb-2">
+          Sports to scan {savingLeagues && <span className="text-indigo-400">saving…</span>}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {SPORT_GROUPS.map(group => {
+            const active = group.keys.some(k => leagues.includes(k));
+            return (
+              <button
+                key={group.label}
+                onClick={() => handleLeagueToggle(group)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                  active
+                    ? "bg-indigo-600/20 border-indigo-500/50 text-indigo-300"
+                    : "bg-transparent border-gray-700 text-gray-500 hover:border-gray-500 hover:text-gray-400"
+                }`}
+              >
+                <span>{group.icon}</span>
+                {group.label}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

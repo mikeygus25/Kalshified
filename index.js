@@ -72,7 +72,7 @@ function startSportsLoop() {
   if (sportsState.intervalId) return;
   console.log("[Main] Sports scanning started");
   runSports().catch(console.error);
-  sportsState.intervalId = setInterval(() => runSports().catch(console.error), 30000);
+  sportsState.intervalId = setInterval(() => runSports().catch(console.error), 60000);
 }
 
 function stopSportsLoop() {
