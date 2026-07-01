@@ -293,8 +293,8 @@ async function main() {
       console.log(`[Main] Price check: ${m.ticker} yes_bid=${m.yes_bid} → yes_bid_dollars=${m.yes_bid_dollars} yes_ask_dollars=${m.yes_ask_dollars}`);
     }
   } catch (err) {
-    console.error("[Main] Kalshi auth failed:", err.message);
-    process.exit(1);
+    // Don't crash the server on auth failure — log and continue so the dashboard stays up
+    console.error("[Main] Kalshi auth warning:", err.message);
   }
 
   app.listen(PORT, () =>

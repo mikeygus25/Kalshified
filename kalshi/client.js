@@ -2,7 +2,7 @@ const axios = require("axios");
 const crypto = require("crypto");
 const fs = require("fs");
 
-const BASE_URL = "https://api.kalshi.com/trade-api/v2";
+const BASE_URL = "https://api.elections.kalshi.com/trade-api/v2";
 const BASE_PATH = "/trade-api/v2";
 
 function loadPrivateKey() {
@@ -125,10 +125,28 @@ class KalshiClient {
     return res.data;
   }
 
-  // Orders
+  // Orders — Kalshi deprecated the v1 order path; try v2 path first, fall back
   async createOrder(order) {
-    const res = await this.http.post("/portfolio/orders", order);
-    return res.data;
+    try {
+      // Try the newer order path first
+      const res = await this.http.post("/portfolio/orders", {
+        ...order,
+        // Ensure client_order_id is present (required by newer API)
+        client_order_id: order.client_order_id ?? `vlt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      });
+      return res.data;
+    } catch (err) {
+      const code = err.response?.data?.error?.code ?? "";
+      if (code === "deprecated_v1_order_endpoint") {
+        // API moved — try the exchange orders path
+        const res = await this.http.post("/exchange/orders", {
+          ...order,
+          client_order_id: order.client_order_id ?? `vlt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        });
+        return res.data;
+      }
+      throw err;
+    }
   }
 
   async cancelOrder(orderId) {
