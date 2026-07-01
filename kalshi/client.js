@@ -2,8 +2,9 @@ const axios = require("axios");
 const crypto = require("crypto");
 const fs = require("fs");
 
-const BASE_URL = "https://api.elections.kalshi.com/trade-api/v2";
-const BASE_PATH = "/trade-api/v2";
+const BASE_URL       = "https://api.elections.kalshi.com/trade-api/v2";   // read endpoints (balance, markets, positions)
+const ORDER_BASE_URL = "https://external-api.kalshi.com/trade-api/v2";     // v2 order creation
+const BASE_PATH      = "/trade-api/v2";
 
 function loadPrivateKey() {
   let pem;
@@ -58,24 +59,31 @@ function normalizePosition(p) {
   return p;
 }
 
+function makeAuthInterceptor(http) {
+  http.interceptors.request.use((config) => {
+    const timestamp = Date.now().toString();
+    const method    = config.method.toUpperCase();
+    const path      = BASE_PATH + config.url.split("?")[0];
+    config.headers["KALSHI-ACCESS-KEY"]       = process.env.KALSHI_API_KEY_ID;
+    config.headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp;
+    config.headers["KALSHI-ACCESS-SIGNATURE"] = sign(timestamp, method, path);
+    return config;
+  });
+  return http;
+}
+
 class KalshiClient {
   constructor() {
-    this.http = axios.create({
+    this.http = makeAuthInterceptor(axios.create({
       baseURL: BASE_URL,
       headers: { "Content-Type": "application/json" },
-    });
+    }));
 
-    this.http.interceptors.request.use((config) => {
-      const timestamp = Date.now().toString();
-      const method = config.method.toUpperCase();
-      // config.url is the relative path, e.g. "/markets"
-      const path = BASE_PATH + config.url.split("?")[0];
-
-      config.headers["KALSHI-ACCESS-KEY"] = process.env.KALSHI_API_KEY_ID;
-      config.headers["KALSHI-ACCESS-TIMESTAMP"] = timestamp;
-      config.headers["KALSHI-ACCESS-SIGNATURE"] = sign(timestamp, method, path);
-      return config;
-    });
+    // Separate client for v2 order creation (different domain)
+    this.orderHttp = makeAuthInterceptor(axios.create({
+      baseURL: ORDER_BASE_URL,
+      headers: { "Content-Type": "application/json" },
+    }));
   }
 
   // Events
@@ -125,28 +133,34 @@ class KalshiClient {
     return res.data;
   }
 
-  // Orders — Kalshi deprecated the v1 order path; try v2 path first, fall back
-  async createOrder(order) {
-    try {
-      // Try the newer order path first
-      const res = await this.http.post("/portfolio/orders", {
-        ...order,
-        // Ensure client_order_id is present (required by newer API)
-        client_order_id: order.client_order_id ?? `vlt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      });
-      return res.data;
-    } catch (err) {
-      const code = err.response?.data?.error?.code ?? "";
-      if (code === "deprecated_v1_order_endpoint") {
-        // API moved — try the exchange orders path
-        const res = await this.http.post("/exchange/orders", {
-          ...order,
-          client_order_id: order.client_order_id ?? `vlt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        });
-        return res.data;
-      }
-      throw err;
-    }
+  // Orders — v2 API at external-api.kalshi.com with completely new body format
+  async createOrder(old) {
+    // Map old format → new v2 format
+    // old.action: "buy"|"sell", old.side: "yes"|"no", old.yes_price|no_price: cents int
+    const isBuy  = old.action === "buy";
+    const isYes  = old.yes_price != null;
+    const priceCents = isYes ? old.yes_price : old.no_price;
+
+    // In v2, "bid"=buy-YES / "ask"=sell-YES. NO trades are the complement.
+    let v2side, yesPriceDec;
+    if (isBuy  && isYes)  { v2side = "bid"; yesPriceDec = priceCents / 100; }
+    else if (isBuy)       { v2side = "ask"; yesPriceDec = 1 - priceCents / 100; }  // buy NO = ask YES at complement
+    else if (!isBuy && isYes) { v2side = "ask"; yesPriceDec = priceCents / 100; }  // sell YES
+    else                  { v2side = "bid"; yesPriceDec = 1 - priceCents / 100; }  // sell NO = bid YES at complement
+
+    const body = {
+      ticker:                      old.ticker,
+      side:                        v2side,
+      count:                       `${parseInt(old.count, 10)}.00`,
+      price:                       yesPriceDec.toFixed(4),
+      time_in_force:               "good_till_canceled",
+      self_trade_prevention_type:  "taker_at_cross",
+      client_order_id:             old.client_order_id ?? `vlt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    };
+
+    console.log(`[Kalshi] POST /portfolio/events/orders`, JSON.stringify(body));
+    const res = await this.orderHttp.post("/portfolio/events/orders", body);
+    return res.data;
   }
 
   async cancelOrder(orderId) {
