@@ -2,7 +2,7 @@ const axios = require("axios");
 const crypto = require("crypto");
 const fs = require("fs");
 
-const BASE_URL = "https://api.elections.kalshi.com/trade-api/v2";
+const BASE_URL = "https://api.kalshi.com/trade-api/v2";
 const BASE_PATH = "/trade-api/v2";
 
 function loadPrivateKey() {

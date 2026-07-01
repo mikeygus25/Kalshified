@@ -132,9 +132,11 @@ async function run(enabledLeagues) {
       max_tokens: 3000,
       messages:   [{ role: "user", content: `${ANALYSIS_PROMPT}\n\n${JSON.stringify(payload)}` }],
     });
-    const raw    = res.content[0].text.trim();
-    const now    = new Date().toISOString();
-    const parsed = JSON.parse(raw);
+    const raw  = res.content[0].text.trim();
+    const now  = new Date().toISOString();
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) { console.log("[Sports] No JSON array in response:", raw.slice(0, 200)); return { games: liveGames?.length ?? 0, signals: [] }; }
+    const parsed = JSON.parse(jsonMatch[0]);
 
     // Normalise and validate signals so Vault accepts them
     const titleMap = Object.fromEntries(kalshiMarkets.map(m => [m.ticker, m.title]));
