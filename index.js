@@ -285,6 +285,13 @@ async function main() {
     const bal     = await kalshi.ping();
     const balance = bal.balance ?? bal.available_balance ?? 0;
     console.log(`[Main] Kalshi credentials verified — balance: $${(balance / 100).toFixed(2)}`);
+
+    // Sanity-check price normalization with one real market
+    const sample = await kalshi.getMarkets({ limit: 1, status: "open" });
+    const m = sample.markets?.[0];
+    if (m) {
+      console.log(`[Main] Price check: ${m.ticker} yes_bid=${m.yes_bid} → yes_bid_dollars=${m.yes_bid_dollars} yes_ask_dollars=${m.yes_ask_dollars}`);
+    }
   } catch (err) {
     console.error("[Main] Kalshi auth failed:", err.message);
     process.exit(1);

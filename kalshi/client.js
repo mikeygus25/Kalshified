@@ -35,6 +35,29 @@ function sign(timestamp, method, path) {
   }).toString("base64");
 }
 
+// Kalshi v2 returns prices as integer cents (0–99).
+// Agents expect _dollars (0.00–1.00) and _fp float fields.
+// Normalize once here so agents never need to know the wire format.
+function normalizeMarket(m) {
+  if (!m) return m;
+  if (m.yes_bid_dollars == null) m.yes_bid_dollars = (m.yes_bid ?? 0) / 100;
+  if (m.yes_ask_dollars == null) m.yes_ask_dollars = (m.yes_ask ?? 0) / 100;
+  if (m.no_bid_dollars  == null) m.no_bid_dollars  = (m.no_bid  ?? 0) / 100;
+  if (m.no_ask_dollars  == null) m.no_ask_dollars  = (m.no_ask  ?? 0) / 100;
+  if (m.volume_fp        == null) m.volume_fp        = m.volume        ?? 0;
+  if (m.open_interest_fp == null) m.open_interest_fp = m.open_interest ?? 0;
+  return m;
+}
+
+function normalizePosition(p) {
+  if (!p) return p;
+  // API uses "market_ticker" not "ticker", and integer "position" not "position_fp"
+  if (p.ticker == null && p.market_ticker) p.ticker = p.market_ticker;
+  if (p.position_fp     == null) p.position_fp     = p.position ?? 0;
+  if (p.total_traded_dollars == null) p.total_traded_dollars = (p.total_cost ?? 0) / 100;
+  return p;
+}
+
 class KalshiClient {
   constructor() {
     this.http = axios.create({
@@ -68,13 +91,15 @@ class KalshiClient {
 
   // Markets
   async getMarkets(params = {}) {
-    const res = await this.http.get("/markets", { params });
-    return res.data;
+    const res  = await this.http.get("/markets", { params });
+    const data = res.data;
+    if (Array.isArray(data.markets)) data.markets = data.markets.map(normalizeMarket);
+    return data;
   }
 
   async getMarket(ticker) {
     const res = await this.http.get(`/markets/${ticker}`);
-    return res.data.market;
+    return normalizeMarket(res.data.market);
   }
 
   async getMarketOrderbook(ticker) {
@@ -89,8 +114,10 @@ class KalshiClient {
   }
 
   async getPositions(params = {}) {
-    const res = await this.http.get("/portfolio/positions", { params });
-    return res.data;
+    const res  = await this.http.get("/portfolio/positions", { params });
+    const data = res.data;
+    if (Array.isArray(data.market_positions)) data.market_positions = data.market_positions.map(normalizePosition);
+    return data;
   }
 
   async getFills(params = {}) {
