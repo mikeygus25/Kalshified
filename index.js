@@ -30,7 +30,7 @@ try {
 
 const STATE_PATH         = path.join(__dirname, "state.json");
 const PORT               = parseInt(process.env.PORT              || "3000",   10);
-const SCOUT_INTERVAL     = parseInt(process.env.SCOUT_INTERVAL    || "60000",  10);
+const SCOUT_INTERVAL     = parseInt(process.env.SCOUT_INTERVAL    || "300000", 10); // 5 min default
 const VAULT_INTERVAL     = parseInt(process.env.VAULT_INTERVAL    || "10000",  10);
 const ROBINHOOD_INTERVAL = parseInt(process.env.ROBINHOOD_INTERVAL || "300000", 10);
 

@@ -12,18 +12,24 @@ const STATE_PATH  = path.join(__dirname, "../state.json");
 const MEMORY_PATH = path.join(__dirname, "../scout_memory.json");
 const anthropic   = new Anthropic();
 
-// Re-analyze a market if it is older than 30 min OR its mid price moved >4 %
-const MEMORY_TTL_MS        = 30 * 60 * 1000;
-const PRICE_MOVE_THRESHOLD = 0.04;
-const MEMORY_MAX_AGE_MS    = 6  * 60 * 60 * 1000; // prune entries older than 6 h
+// Re-analyze a market if it is older than 10 min OR its mid price moved >2 %
+const MEMORY_TTL_MS        = 10 * 60 * 1000;
+const PRICE_MOVE_THRESHOLD = 0.02;
+const MEMORY_MAX_AGE_MS    = 3  * 60 * 60 * 1000; // prune entries older than 3 h
 
 // Stable system prompts — cached at the API level on repeated calls
 const MARKET_SYSTEM_PROMPT = `You are Scout, a market research agent for a Kalshi prediction market trading platform.
 Analyze a list of open markets and identify the most promising candidates for trading based on:
+- Time to resolution: STRONGLY prefer markets closing TODAY or within 24 hours — fast resolution = fast profit
 - Liquidity (volume, open interest)
 - Mispricing potential (spread width, implied vs. fair probability)
 - Event clarity (well-defined resolution criteria)
-- Time to resolution (prefer 1–14 days, accept up to 30)
+
+PRIORITIZE in this order:
+1. Markets closing within 6 hours (highest priority — live events, intraday)
+2. Markets closing today / within 24 hours
+3. Markets closing within 3 days (acceptable)
+4. Markets closing in 3-30 days (low priority only if clearly mispriced)
 
 Return a JSON array — nothing else:
 [{ "ticker": string, "title": string, "priority": "high"|"medium"|"low", "reason": string }]
@@ -89,18 +95,27 @@ function needsReanalysis(market, memory) {
 // ─── market fetch ─────────────────────────────────────────────────────────────
 
 async function fetchCandidateMarkets() {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const data = await kalshi.getMarkets({ max_close_ts: nowSec + 30 * 86400, limit: 200 });
-  const all = data.markets || [];
-  console.log(`[Scout] Fetched ${all.length} markets closing within 30 days`);
+  const nowSec     = Math.floor(Date.now() / 1000);
+  const in6h       = nowSec + 6  * 3600;
+  const in24h      = nowSec + 24 * 3600;
+  const in3d       = nowSec + 3  * 86400;
 
-  const withLiquidity = all.filter(
-    m => parseFloat(m.volume_fp || "0") > 0 || parseFloat(m.open_interest_fp || "0") > 0
-  );
-  const pool = withLiquidity.length > 0 ? withLiquidity : all;
-  pool.sort((a, b) => parseFloat(b.open_interest_fp || "0") - parseFloat(a.open_interest_fp || "0"));
-  const top = pool.slice(0, 50);
-  console.log(`[Scout] Liquid: ${withLiquidity.length} | Shortlisted: ${top.length}`);
+  // Fetch intraday markets (close within 24h) and mid-term (3 days) in parallel
+  const [intradayData, midtermData] = await Promise.all([
+    kalshi.getMarkets({ min_close_ts: nowSec, max_close_ts: in24h, limit: 200, status: "open" }),
+    kalshi.getMarkets({ min_close_ts: in24h,  max_close_ts: in3d,  limit: 100, status: "open" }),
+  ]);
+
+  const intraday = intradayData.markets || [];
+  const midterm  = midtermData.markets  || [];
+  console.log(`[Scout] Intraday (≤24h): ${intraday.length} | Mid-term (1-3d): ${midterm.length}`);
+
+  // Sort each bucket by open interest descending
+  const sort = arr => arr.sort((a, b) => parseFloat(b.open_interest_fp || "0") - parseFloat(a.open_interest_fp || "0"));
+
+  // Combine: take top 40 intraday + top 10 mid-term
+  const top = [...sort(intraday).slice(0, 40), ...sort(midterm).slice(0, 10)];
+  console.log(`[Scout] Shortlisted: ${top.length} (${Math.min(intraday.length,40)} intraday + ${Math.min(midterm.length,10)} mid-term)`);
   return top;
 }
 

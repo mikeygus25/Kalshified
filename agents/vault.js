@@ -18,7 +18,7 @@ const anthropic = new Anthropic();
 const MAX_POSITION_CONTRACTS = parseInt(process.env.MAX_POSITION_SIZE || "100", 10);
 const MAX_DAILY_LOSS        = parseInt(process.env.MAX_DAILY_LOSS     || "500", 10);
 const MAX_OPEN_POSITIONS    = parseInt(process.env.MAX_OPEN_POSITIONS  || "10",  10);
-const SIGNAL_MAX_AGE_MS     = 2 * 60 * 60 * 1000; // ignore signals older than 2 h
+const SIGNAL_MAX_AGE_MS     = 20 * 60 * 1000; // ignore signals older than 20 min (intraday focus)
 
 // Sell triggers (all purely mechanical — no Claude involved)
 const TAKE_PROFIT_THRESHOLD = 0.50; // sell when 50 % of max possible gain is captured

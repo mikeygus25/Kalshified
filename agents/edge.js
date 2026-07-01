@@ -33,6 +33,9 @@ Generate a signal only when both conditions hold:
   1. |fair_prob - mid_price| > 0.05  (meaningful mispricing)
   2. EV > 0.02 after crossing the spread
 
+STRONGLY prefer markets closing within 24 hours — fast resolution compounds capital faster.
+For markets closing within 6 hours with clear edges, be more aggressive on confidence.
+
 Return a JSON array with this exact shape (no extra keys):
 [
   {
